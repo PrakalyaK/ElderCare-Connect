@@ -9,64 +9,61 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let dbInstance = null;
-let clientInstance = null;
-let isPgLite = false;
+let initDbPromise = null;
 
 export async function getDb() {
-  if (dbInstance) {
-    return { db: dbInstance, isPgLite };
+  if (initDbPromise) {
+    return initDbPromise;
   }
 
-  const databaseUrl = process.env.DATABASE_URL?.trim();
+  initDbPromise = (async () => {
+    const databaseUrl = process.env.DATABASE_URL?.trim();
 
-  if (databaseUrl) {
-    try {
-      console.log('Connecting to PostgreSQL using DATABASE_URL...');
-      const { drizzle } = await import('drizzle-orm/node-postgres');
-      const pgModule = await import('pg');
-      const { Pool } = pgModule.default || pgModule;
+    if (databaseUrl) {
+      try {
+        console.log('Connecting to PostgreSQL using DATABASE_URL...');
+        const { drizzle } = await import('drizzle-orm/node-postgres');
+        const pgModule = await import('pg');
+        const { Pool } = pgModule.default || pgModule;
 
-      const pool = new Pool({
-        connectionString: databaseUrl,
-        ssl: databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
-          ? { rejectUnauthorized: false }
-          : false,
-      });
+        const pool = new Pool({
+          connectionString: databaseUrl,
+          ssl: databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
+            ? { rejectUnauthorized: false }
+            : false,
+        });
 
-      // Quick connectivity test
-      const testClient = await pool.connect();
-      testClient.release();
+        const testClient = await pool.connect();
+        testClient.release();
 
-      clientInstance = pool;
-      dbInstance = drizzle(pool, { schema });
-      isPgLite = false;
-      console.log('Connected to PostgreSQL successfully.');
-      await initSchema(dbInstance);
-      return { db: dbInstance, isPgLite };
-    } catch (err) {
-      console.warn('Failed to connect to PostgreSQL via DATABASE_URL, falling back to embedded PGlite:', err.message);
+        const db = drizzle(pool, { schema });
+        console.log('Connected to PostgreSQL successfully.');
+        await initSchema(pool, false);
+        return { db, client: pool, isPgLite: false };
+      } catch (err) {
+        console.warn('Failed to connect to PostgreSQL via DATABASE_URL, falling back to embedded PGlite:', err.message);
+      }
     }
-  }
 
-  // Embedded PGlite fallback
-  console.log('Initializing embedded PostgreSQL (PGlite)...');
-  const { PGlite } = await import('@electric-sql/pglite');
-  const { drizzle } = await import('drizzle-orm/pglite');
+    // Embedded PGlite fallback
+    console.log('Initializing embedded PostgreSQL (PGlite)...');
+    const { PGlite } = await import('@electric-sql/pglite');
+    const { drizzle } = await import('drizzle-orm/pglite');
 
-  const pglite = new PGlite();
-  await pglite.waitReady;
-  clientInstance = pglite;
-  dbInstance = drizzle(pglite, { schema });
-  isPgLite = true;
-  console.log('Embedded PostgreSQL (PGlite) initialized successfully.');
+    const pglite = new PGlite();
+    await pglite.waitReady;
+    const db = drizzle(pglite, { schema });
+    console.log('Embedded PostgreSQL (PGlite) initialized successfully.');
 
-  await initSchema(dbInstance);
-  return { db: dbInstance, isPgLite };
+    await initSchema(pglite, true);
+    return { db, client: pglite, isPgLite: true };
+  })();
+
+  return initDbPromise;
 }
 
 // Ensure all tables exist
-async function initSchema(db) {
+async function initSchema(client, isPgLiteClient) {
   const ddl = `
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -246,16 +243,15 @@ async function initSchema(db) {
   `;
 
   try {
-    if (clientInstance.exec) {
-      await clientInstance.exec(ddl);
+    if (client.exec) {
+      await client.exec(ddl);
     } else {
-      // Split by semicolon for pool.query if needed, or query directly
       const statements = ddl
         .split(';')
         .map(s => s.trim())
         .filter(s => s.length > 0);
       for (const statement of statements) {
-        await clientInstance.query(statement);
+        await client.query(statement);
       }
     }
     console.log('Database tables verified and ready.');

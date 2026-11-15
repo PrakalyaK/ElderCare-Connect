@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '../db/db.js';
 import * as schema from '../db/schema.js';
-import { authenticate, requireProfileAccess } from '../middleware/auth.js';
+import { authenticate, requireProfileAccess, signToken } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/rateLimit.js';
 
 const router = express.Router();
@@ -24,6 +24,142 @@ function generatePasscode() {
   }
   return code;
 }
+
+// POST /api/profiles/register-and-create - 1-step account registration + elderly profile creation
+router.post('/register-and-create', authLimiter, async (req, res) => {
+  try {
+    const {
+      email,
+      password,
+      fullName,
+      phone,
+      displayName,
+      dateOfBirth,
+      gender,
+      bloodGroup,
+      primaryPhysician,
+      physicianPhone,
+      notes,
+      escalationTimeoutMinutes,
+      customPasscode,
+    } = req.body;
+
+    const patientName = displayName || fullName;
+    if (!patientName) {
+      return res.status(400).json({ error: 'Patient display name is required.' });
+    }
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required to register your account.' });
+    }
+
+    const { db } = await getDb();
+
+    // Check if user already exists
+    let user;
+    const [existing] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.email, email.toLowerCase().trim()));
+
+    if (existing) {
+      const match = await bcrypt.compare(password, existing.passwordHash);
+      if (!match) {
+        return res.status(401).json({ error: 'An account with this email already exists. Please enter the correct password.' });
+      }
+      user = existing;
+    } else {
+      const passwordHash = await bcrypt.hash(password, 10);
+      const userId = nanoid();
+      user = {
+        id: userId,
+        email: email.toLowerCase().trim(),
+        passwordHash,
+        fullName: (fullName || displayName).trim(),
+        phone: phone?.trim() || null,
+        role: 'elderly',
+        elderlyMode: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await db.insert(schema.users).values(user);
+    }
+
+    const token = signToken({ userId: user.id, role: user.role });
+
+    const rawPasscode = (customPasscode && customPasscode.trim().length >= 4)
+      ? customPasscode.trim().toUpperCase()
+      : generatePasscode();
+
+    const passcodeHash = await bcrypt.hash(rawPasscode, 10);
+    const profileId = generateProfileId();
+    const id = nanoid();
+
+    const newProfile = {
+      id,
+      userId: user.id,
+      profileId,
+      passcodeHash,
+      displayName: patientName.trim(),
+      dateOfBirth: dateOfBirth || null,
+      gender: gender || null,
+      bloodGroup: bloodGroup || null,
+      primaryPhysician: primaryPhysician || null,
+      physicianPhone: physicianPhone || null,
+      notes: notes || null,
+      escalationTimeoutMinutes: escalationTimeoutMinutes ? parseInt(escalationTimeoutMinutes, 10) : 60,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await db.insert(schema.elderlyProfiles).values(newProfile);
+
+    // Default health profile details
+    await db.insert(schema.healthProfileDetails).values({
+      id: nanoid(),
+      profileId: id,
+      allergies: JSON.stringify([]),
+      conditions: JSON.stringify([]),
+      bloodType: bloodGroup || null,
+      dnrStatus: 'No DNR on file',
+      insuranceProvider: null,
+      insurancePolicyNumber: null,
+      preferredHospital: null,
+      updatedAt: new Date(),
+    });
+
+    // Audit log
+    await db.insert(schema.activityLogs).values({
+      id: nanoid(),
+      profileId: id,
+      actorUserId: user.id,
+      actorName: user.fullName,
+      actorRole: user.role,
+      action: 'PROFILE_CREATED',
+      details: `Healthcare profile ${profileId} created for ${newProfile.displayName}.`,
+    });
+
+    return res.status(201).json({
+      message: 'Account and elderly healthcare profile created successfully.',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        elderlyMode: user.elderlyMode,
+      },
+      profile: {
+        ...newProfile,
+        passcodeHash: undefined,
+      },
+      plainPasscode: rawPasscode,
+    });
+  } catch (err) {
+    console.error('Register and create profile error:', err);
+    return res.status(500).json({ error: 'Failed to create account and profile.' });
+  }
+});
 
 // POST /api/profiles - Create elderly healthcare profile
 router.post('/', authenticate, async (req, res) => {

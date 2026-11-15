@@ -21,6 +21,11 @@ async function request(endpoint, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Clear stale or orphaned session tokens so user is never stuck in an invalid state
+      localStorage.removeItem('eldercare_token');
+      localStorage.removeItem('eldercare_active_profile_id');
+    }
     const errorMsg = data.error || `Request failed with status ${response.status}`;
     const err = new Error(errorMsg);
     err.status = response.status;
@@ -40,6 +45,7 @@ export const api = {
 
   // Profiles
   createProfile: (body) => request('/profiles', { method: 'POST', body }),
+  registerAndCreateProfile: (body) => request('/profiles/register-and-create', { method: 'POST', body }),
   getMyProfiles: () => request('/profiles/my'),
   getProfile: (profileId) => request(`/profiles/${profileId}`),
   updateProfile: (profileId, body) => request(`/profiles/${profileId}`, { method: 'PUT', body }),
