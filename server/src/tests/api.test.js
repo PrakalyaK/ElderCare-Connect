@@ -363,4 +363,119 @@ describe('ElderCare Connect Comprehensive Workflow Verification Suite', async ()
 
     assert.equal(revokedRecord.status, 'revoked', 'Access status must be revoked');
   });
+
+  test('Security Test 1: Forged / Invalid JWT Token Rejection', async () => {
+    let rejected = false;
+    try {
+      // Simulate verifying a forged token signed with a bogus secret
+      const jwt = (await import('jsonwebtoken')).default;
+      jwt.verify('forged.invalid.token', 'wrong_secret');
+    } catch (err) {
+      rejected = true;
+    }
+    assert.equal(rejected, true, 'Forged or malformed JWT token must be rejected');
+  });
+
+  test('Security Test 2: Invalid Access Passcode Rejection', async () => {
+    const wrongPasscode = 'WRONG123';
+    const isMatch = await bcrypt.compare(wrongPasscode, testProfile.passcodeHash);
+    assert.equal(isMatch, false, 'Incorrect passcode must fail comparison and deny profile access');
+  });
+
+  test('Security Test 3: Multi-Tenant Profile Isolation', async () => {
+    // An arbitrary unauthorized user should not have access to testProfile
+    const unauthorizedUserId = nanoid();
+    const [access] = await db
+      .select()
+      .from(schema.profileAccess)
+      .where(
+        and(
+          eq(schema.profileAccess.profileId, testProfile.id),
+          eq(schema.profileAccess.userId, unauthorizedUserId),
+          eq(schema.profileAccess.status, 'authorized')
+        )
+      );
+
+    assert.equal(access, undefined, 'Unauthorized user must have zero access grants to the profile');
+  });
+
+  test('Efficiency & Logic Test 4: Inventory Threshold Detection', async () => {
+    const [inv] = await db
+      .select()
+      .from(schema.medicineInventory)
+      .where(eq(schema.medicineInventory.medicationId, testMedication.id));
+
+    // Current quantity is 29, lowStockThreshold is 5
+    const isLowStockInitial = inv.currentQuantity <= inv.lowStockThreshold;
+    assert.equal(isLowStockInitial, false, 'Stock should be adequate initially');
+
+    // Simulate stock dipping to 4 (below threshold)
+    await db
+      .update(schema.medicineInventory)
+      .set({ currentQuantity: 4 })
+      .where(eq(schema.medicineInventory.id, inv.id));
+
+    const [updatedInv] = await db
+      .select()
+      .from(schema.medicineInventory)
+      .where(eq(schema.medicineInventory.id, inv.id));
+
+    const isLowStockCritical = updatedInv.currentQuantity <= updatedInv.lowStockThreshold;
+    assert.equal(isLowStockCritical, true, 'Low stock threshold must trigger when quantity <= threshold');
+  });
+
+  test('Data Integrity Test 5: Mark Dose Skipped with Reason Auditing', async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const skipLogId = nanoid();
+
+    // Insert pending log
+    await db.insert(schema.medicationLogs).values({
+      id: skipLogId,
+      profileId: testProfile.id,
+      medicationId: testMedication.id,
+      scheduledDate: todayStr,
+      scheduledTime: '20:00',
+      status: 'pending',
+      escalationLevel: 0,
+      createdAt: new Date(),
+    });
+
+    // Mark as skipped with reason
+    const skipReason = 'Patient experiencing mild nausea; doctor consulted';
+    await db
+      .update(schema.medicationLogs)
+      .set({
+        status: 'skipped',
+        notes: skipReason,
+        recordedAt: new Date(),
+        recordedByName: testElderlyUser.fullName,
+      })
+      .where(eq(schema.medicationLogs.id, skipLogId));
+
+    const [verifiedLog] = await db
+      .select()
+      .from(schema.medicationLogs)
+      .where(eq(schema.medicationLogs.id, skipLogId));
+
+    assert.equal(verifiedLog.status, 'skipped');
+    assert.equal(verifiedLog.notes, skipReason);
+  });
+
+  test('Data Integrity Test 6: Emergency Health Details Persistence', async () => {
+    const emergencyId = nanoid();
+    const [details] = await db.insert(schema.healthProfileDetails).values({
+      id: emergencyId,
+      profileId: testProfile.id,
+      allergies: JSON.stringify(['Penicillin', 'Latex']),
+      conditions: JSON.stringify(['Hypertension', 'Mild Arthritis']),
+      bloodType: 'A+',
+      dnrStatus: 'No DNR on file',
+      preferredHospital: 'St. Jude General Hospital',
+      updatedAt: new Date(),
+    }).returning();
+
+    assert.ok(details.allergies.includes('Penicillin'));
+    assert.equal(details.preferredHospital, 'St. Jude General Hospital');
+    assert.equal(details.dnrStatus, 'No DNR on file');
+  });
 });

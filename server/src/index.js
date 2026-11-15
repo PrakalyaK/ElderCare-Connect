@@ -31,12 +31,25 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Security: Disable Express fingerprinting
+app.disable('x-powered-by');
+
+// Security: Standard HTTP Defense Headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  next();
+});
+
 // Middleware
 app.use(cors({
   origin: '*', // Allow all origins for dev/eval ease
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use('/api', apiLimiter);
 
 // Health check
@@ -86,9 +99,18 @@ app.use('/api/profiles/:profileId/escalation', escalationRoutes);
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 if (fs.existsSync(clientDistPath)) {
   console.log('Serving production frontend from:', clientDistPath);
-  app.use(express.static(clientDistPath));
+  app.use(express.static(clientDistPath, {
+    maxAge: '1d',
+    setHeaders: (res, filePath) => {
+      // Long-term immutable caching for hashed Vite build assets
+      if (filePath.includes('assets')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(clientDistPath, 'index.html'));
     }
   });
