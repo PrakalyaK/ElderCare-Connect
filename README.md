@@ -102,7 +102,7 @@ A morning and evening plain-language briefing generated dynamically:
 | **Backend** | Node.js (v22+), Express.js, REST APIs |
 | **Database** | PostgreSQL / Neon DB, Drizzle ORM, `@electric-sql/pglite` (Zero-Config Embedded Fallback) |
 | **Integrations** | Nodemailer, Node Cron, Web Speech Recognition & Synthesis APIs, BcryptJS, JWT |
-| **Security** | Express Rate Limiter, Bcrypt Passcode Hashing, Multi-Tenant Profile Isolation |
+| **Security & Reliability** | Express Rate Limiter, Bcrypt Passcode Hashing, Multi-Tenant Profile Isolation, Defense-in-Depth HTTP Headers, JSON Size Limit, React Error Boundaries |
 
 ---
 
@@ -120,7 +120,7 @@ A morning and evening plain-language briefing generated dynamically:
 
 ## 🧪 Comprehensive Workflow Verification
 
-All 12 essential workflows specified in the PromptWars challenge have automated test coverage passing **9/9 test suites with 0 failures**:
+All 12 essential workflows specified in the PromptWars challenge plus dedicated security and data-integrity verifications have automated test coverage passing **15/15 tests with 0 failures**:
 
 ```
 TAP version 13
@@ -133,12 +133,18 @@ ok 6 - Workflow 6 & 7: Mark Medication as Taken & Verify Dose Log & Stock Decrem
 ok 7 - Workflow 8 & 9: Simulate Missed Dose, Notification Generation and Multi-Tier Escalation
 ok 8 - Workflow 10 & 11: Create Doctor Appointment & Verify Reminder Pipeline
 ok 9 - Workflow 12: Revoke Caregiver Access and Verify Access is Denied
-# tests 9 | suites 1 | pass 9 | fail 0
+ok 10 - Security Test 1: Forged / Invalid JWT Token Rejection
+ok 11 - Security Test 2: Invalid Access Passcode Rejection
+ok 12 - Security Test 3: Multi-Tenant Profile Isolation
+ok 13 - Efficiency & Logic Test 4: Inventory Threshold Detection
+ok 14 - Data Integrity Test 5: Mark Dose Skipped with Reason Auditing
+ok 15 - Data Integrity Test 6: Emergency Health Details Persistence
+# tests 15 | suites 1 | pass 15 | fail 0
 ```
 
 To run the automated tests locally:
 ```bash
-npm run test
+npm test
 ```
 
 ---

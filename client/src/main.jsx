@@ -7,17 +7,20 @@ import './index.css';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ProfileProvider } from './context/ProfileContext.jsx';
 import { ElderlyModeProvider } from './context/ElderlyModeContext.jsx';
+import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <AuthProvider>
-        <ProfileProvider>
-          <ElderlyModeProvider>
-            <App />
-          </ElderlyModeProvider>
-        </ProfileProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AuthProvider>
+          <ProfileProvider>
+            <ElderlyModeProvider>
+              <App />
+            </ElderlyModeProvider>
+          </ProfileProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 );
