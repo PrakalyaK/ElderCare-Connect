@@ -28,7 +28,7 @@ export async function getDb() {
 
         const pool = new Pool({
           connectionString: databaseUrl,
-          ssl: databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
+          ssl: databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require') || databaseUrl.includes('render.com') || databaseUrl.includes('dpg-')
             ? { rejectUnauthorized: false }
             : false,
         });
