@@ -1,30 +1,53 @@
+import { handleMockFallback, resetMockDatabase } from './mockData';
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io');
 
 async function request(endpoint, options = {}) {
-  const token = localStorage.getItem('eldercare_token');
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
-  };
+  let response;
+  try {
+    const token = localStorage.getItem('eldercare_token');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    };
 
-  const config = {
-    ...options,
-    headers,
-  };
+    const config = {
+      ...options,
+      headers,
+    };
 
-  if (options.body && typeof options.body === 'object') {
-    config.body = JSON.stringify(options.body);
+    if (options.body && typeof options.body === 'object') {
+      config.body = JSON.stringify(options.body);
+    }
+
+    response = await fetch(`${BASE_URL}${endpoint}`, config);
+
+    // If static host returns 404 HTML for /api routes
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html') && !BASE_URL.startsWith('http')) {
+      throw new Error('API route not handled by static host (HTML fallback)');
+    }
+  } catch (netErr) {
+    // Only fall back to mock data if on GitHub Pages or if offline in dev
+    if (isGitHubPages || window.location.hostname === 'localhost') {
+      console.warn(`[ElderCare API] Backend unavailable (${netErr.message}), using in-browser demo data for: ${endpoint}`);
+      return handleMockFallback(endpoint, options);
+    }
+    throw netErr;
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, config);
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     if (response.status === 401) {
-      // Clear stale or orphaned session tokens so user is never stuck in an invalid state
       localStorage.removeItem('eldercare_token');
       localStorage.removeItem('eldercare_active_profile_id');
+    }
+    // If running on GitHub Pages and received a 404 from GitHub Pages
+    if (response.status === 404 && isGitHubPages) {
+      return handleMockFallback(endpoint, options);
     }
     const errorMsg = data.error || `Request failed with status ${response.status}`;
     const err = new Error(errorMsg);
