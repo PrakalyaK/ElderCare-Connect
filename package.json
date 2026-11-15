@@ -1,0 +1,25 @@
+{
+  "name": "eldercare-connect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ElderCare Connect — Elderly Care & Medication Management Platform for PromptWars × Catalyst Hackathon",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "test": "npm --prefix server test",
+    "seed": "npm --prefix server run seed"
+  },
+  "keywords": [
+    "healthcare",
+    "elderly-care",
+    "medication-management",
+    "drizzle-orm",
+    "postgresql",
+    "react",
+    "vite",
+    "tailwind"
+  ]
+}
